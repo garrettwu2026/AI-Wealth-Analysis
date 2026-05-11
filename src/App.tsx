@@ -1,14 +1,20 @@
-import { useState, useRef } from 'react';
-import { Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key, Download } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from './components/ui/card';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { 
+  Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key, Download,
+  Plus, Save, History, ArrowLeftRight, Layers, Scale, Info
+} from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from './components/ui/card';
 import { Input, Label } from './components/ui/input';
 import { Button } from './components/ui/button';
 import { AssetData, LiabilityData, RetirementData, AIConfig, AnalysisResult } from './types';
 import { analyzeWealth } from './services/ai';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, AreaChart, Area } from 'recharts';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkGfm from 'remark-gfm';
+import { motion, AnimatePresence } from 'motion/react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 const COLORS = ['#f97316', '#14b8a6', '#eab308', '#6366f1', '#ec4899', '#8b5cf6'];
 
@@ -26,13 +32,34 @@ function decryptKey(enc: string) {
   }
 }
 
+const formatCurrency = (val: number) => {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(val);
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<'input' | 'analysis'>('input');
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [showCalculationSteps, setShowCalculationSteps] = useState(false);
   const [showPRCalculationSteps, setShowPRCalculationSteps] = useState(false);
   const [showFireCalculationSteps, setShowFireCalculationSteps] = useState(false);
+
+  // Sensitivity Analysis
+  const [roi, setRoi] = useState(0.06);
+  const [inflation, setInflation] = useState(0.025);
+
+  // Scenario Comparison
+  const [snapshot, setSnapshot] = useState<{
+    assets: AssetData;
+    liabilities: LiabilityData;
+    retirement: RetirementData;
+    result: AnalysisResult;
+    roi: number;
+    inflation: number;
+    timestamp: number;
+  } | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
 
   const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
     let savedGemini = '';
@@ -91,9 +118,25 @@ export default function App() {
     if (loading) return;
     try {
       setLoading(true);
+      setLoadingStep(0);
       setError(null);
+      
+      const steps = [
+        '正在彙整您的財富數據...',
+        '調研全球財富百分位數資料庫...',
+        '運算退休資產長期增長軌跡...',
+        'AI 正在讀取並診斷您的財務健康狀況...',
+        '產生個人化最佳化建議清單...'
+      ];
+
+      const interval = setInterval(() => {
+        setLoadingStep(prev => (prev < steps.length - 1 ? prev + 1 : prev));
+      }, 2000);
+
       abortControllerRef.current = new AbortController();
       const res = await analyzeWealth(aiConfig, assets, liabilities, retirement, abortControllerRef.current.signal);
+      
+      clearInterval(interval);
       setResult(res);
       setActiveTab('analysis');
     } catch (err: any) {
@@ -104,6 +147,7 @@ export default function App() {
       }
     } finally {
       setLoading(false);
+      setLoadingStep(0);
       abortControllerRef.current = null;
     }
   };
@@ -124,17 +168,24 @@ export default function App() {
   ].filter(d => d.value > 0);
 
   // Generate projection data
-  const generateProjection = () => {
-    let simulatedNetWorth = netWorth;
+  const generateProjection = (
+    customNetWorth?: number, 
+    customRoi?: number, 
+    customInflation?: number,
+    customRetirement?: RetirementData
+  ) => {
+    const activeRetirement = customRetirement || retirement;
+    let simulatedNetWorth = customNetWorth !== undefined ? customNetWorth : netWorth;
     const data = [];
-    const inflationRate = 0.025;
-    const roi = 0.06;
-    let currentExpense = Number(retirement.annualExpense);
-    const investable = Number(retirement.annualInvestable);
-    const postRetirementIncome = Number(retirement.postRetirementIncome) || 0;
-    const startAge = Number(retirement.currentAge);
-    const retirementAge = Number(retirement.retirementAge);
-    const targetLifespan = Number(retirement.targetLifespan) || 120;
+    const inflationRate = customInflation !== undefined ? customInflation : inflation;
+    const currentRoi = customRoi !== undefined ? customRoi : roi;
+    
+    let currentExpense = Number(activeRetirement.annualExpense);
+    const investable = Number(activeRetirement.annualInvestable);
+    const postRetirementIncome = Number(activeRetirement.postRetirementIncome) || 0;
+    const startAge = Number(activeRetirement.currentAge);
+    const retirementAge = Number(activeRetirement.retirementAge);
+    const targetLifespan = Number(activeRetirement.targetLifespan) || 120;
 
     for (let age = startAge; age <= targetLifespan; age++) {
        data.push({ 
@@ -144,13 +195,76 @@ export default function App() {
        });
        
        if (age < retirementAge) {
-         simulatedNetWorth = simulatedNetWorth * (1 + roi) + investable;
+         simulatedNetWorth = simulatedNetWorth * (1 + currentRoi) + investable;
        } else {
-         simulatedNetWorth = simulatedNetWorth * (1 + roi) - currentExpense + postRetirementIncome;
+         simulatedNetWorth = simulatedNetWorth * (1 + currentRoi) - currentExpense + postRetirementIncome;
        }
        currentExpense *= (1 + inflationRate);
     }
     return data;
+  };
+
+  const projectionData = useMemo(() => generateProjection(), [netWorth, roi, inflation, retirement]);
+  
+  const comparisonData = useMemo(() => {
+    if (!compareMode || !snapshot) return null;
+    
+    // Calculate snapshot projection
+    const sAssets = snapshot.assets;
+    const sLiabilities = snapshot.liabilities;
+    const sRetirement = snapshot.retirement;
+    const sTotalAssets = Object.values(sAssets).reduce((a, b) => a + (Number(b) || 0), 0);
+    const sActualLiabilities = (Number(sLiabilities.mortgage) || 0) + (Number(sLiabilities.personalLoan) || 0) + (Number(sLiabilities.carLoan) || 0);
+    const sNetWorth = sTotalAssets - sActualLiabilities;
+    
+    return generateProjection(sNetWorth, snapshot.roi, snapshot.inflation, sRetirement);
+  }, [compareMode, snapshot]);
+
+  // Combine data for comparison chart
+  const combinedChartData = useMemo(() => {
+    if (!comparisonData) return projectionData;
+    
+    const combined = [];
+    const maxAge = Math.max(
+      projectionData[projectionData.length - 1]?.age || 0,
+      comparisonData[comparisonData.length - 1]?.age || 0
+    );
+    const minAge = Math.min(
+      projectionData[0]?.age || 0,
+      comparisonData[0]?.age || 0
+    );
+
+    for (let age = minAge; age <= maxAge; age++) {
+      const current = projectionData.find(d => d.age === age);
+      const prev = comparisonData.find(d => d.age === age);
+      combined.push({
+        age,
+        NetWorth: current?.NetWorth,
+        Expenses: current?.Expenses,
+        PrevNetWorth: prev?.NetWorth,
+        PrevExpenses: prev?.Expenses
+      });
+    }
+    return combined;
+  }, [projectionData, comparisonData]);
+
+  const benchmarks = {
+    '60/40 股債平衡型': { stocks: 60, bonds: 40, metals: 0, crypto: 0, cash: 0, realEstate: 0 },
+    '全天候 (Bridgewater)': { stocks: 30, bonds: 55, metals: 7.5, crypto: 0, cash: 0, realEstate: 7.5 },
+    '指數化三基金 (Bogleheads)': { stocks: 33, cash: 33, bonds: 33, metals: 0, crypto: 0, realEstate: 0 },
+  };
+
+  const handleSaveSnapshot = () => {
+    if (!result) return;
+    setSnapshot({
+      assets: JSON.parse(JSON.stringify(assets)),
+      liabilities: JSON.parse(JSON.stringify(liabilities)),
+      retirement: JSON.parse(JSON.stringify(retirement)),
+      result: JSON.parse(JSON.stringify(result)),
+      roi,
+      inflation,
+      timestamp: Date.now()
+    });
   };
 
   const exportReportAsMarkdown = () => {
@@ -214,18 +328,115 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
     URL.revokeObjectURL(url);
   };
 
-  const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(val);
+  const exportToPDF = async () => {
+    const element = document.getElementById('analysis-report');
+    if (!element) return;
+    
+    setLoading(true);
+    setLoadingStep(0);
+    
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#f8fafc'
+      });
+      
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const imgScaledWidth = imgWidth * ratio;
+      const imgScaledHeight = imgHeight * ratio;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, imgScaledWidth, imgScaledHeight);
+      pdf.save(`FIRE_Report_${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (e) {
+      console.error('PDF export failed', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const LoadingOverlay = () => {
+    const steps = [
+      { msg: '正在彙整您的財富數據...', icon: <Banknote size={18} /> },
+      { msg: '調研全球財富百分位數資料庫...', icon: <Globe size={18} /> },
+      { msg: '運算退休資產長期增長軌跡...', icon: <TrendingUp size={18} /> },
+      { msg: 'AI 正在讀取並診斷您的財務健康狀況...', icon: <BrainCircuit size={18} /> },
+      { msg: '產生個人化最佳化建議清單...', icon: <Sparkles size={18} /> }
+    ];
+
+    return (
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4"
+      >
+        <Card className="w-full max-w-md bg-white border-indigo-500 shadow-2xl shadow-indigo-500/20 overflow-hidden">
+          <div className="h-1.5 w-full bg-slate-100">
+            <motion.div 
+              className="h-full bg-indigo-500"
+              initial={{ width: '0%' }}
+              animate={{ width: `${(loadingStep + 1) * 20}%` }}
+              transition={{ duration: 0.5 }}
+            />
+          </div>
+          <CardContent className="p-8 space-y-8">
+            <div className="flex flex-col items-center">
+              <div className="relative mb-6">
+                <motion.div 
+                   animate={{ rotate: 360 }}
+                  transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}
+                  className="w-20 h-20 rounded-3xl border-4 border-indigo-500/20 border-t-indigo-500 flex items-center justify-center"
+                />
+                <div className="absolute inset-0 flex items-center justify-center">
+                   <BrainCircuit className="text-indigo-500 animate-pulse" size={32} />
+                </div>
+              </div>
+              <h3 className="text-xl font-black text-slate-800">AI 財富診斷進行中</h3>
+              <p className="text-slate-500 text-sm mt-2">這預估需要 15-30 秒，請稍候...</p>
+            </div>
+            
+            <div className="space-y-4">
+              {steps.map((step, i) => (
+                <div key={i} className={`flex items-center gap-3 transition-opacity duration-500 ${i <= loadingStep ? 'opacity-100' : 'opacity-20'}`}>
+                  <div className={`p-2 rounded-lg ${i === loadingStep ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : i < loadingStep ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                    {i < loadingStep ? <ChevronRight size={18} /> : step.icon}
+                  </div>
+                  <span className={`text-[13px] font-bold ${i === loadingStep ? 'text-indigo-600' : i < loadingStep ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {step.msg}
+                  </span>
+                </div>
+              ))}
+            </div>
+            
+            <button onClick={handleCancel} className="w-full py-2 text-rose-500 hover:bg-rose-50 text-xs font-bold uppercase tracking-widest transition-colors rounded-xl">
+              取消分析程序
+            </button>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24">
+      <AnimatePresence>
+        {loading && <LoadingOverlay />}
+      </AnimatePresence>
+ 
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 mb-6 drop-shadow-sm sticky top-0 z-50">
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 mb-6 sticky top-0 z-[60] shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <span className="text-2xl font-bold">W</span>
+              <span className="text-2xl font-bold text-white">W</span>
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight uppercase italic text-slate-800">
@@ -233,23 +444,20 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
               </h1>
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex flex-wrap items-center gap-3 bg-slate-50 border border-slate-200 p-2 rounded-2xl">
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] uppercase font-bold text-slate-500 px-2">分析引擎設定</label>
-                <div className="flex gap-2">
-                  <select 
+ 
+          <div className="flex items-center gap-3">
+            <div className="hidden lg:flex flex-wrap items-center gap-3 bg-slate-100 border border-slate-200 p-1.5 rounded-2xl shadow-inner">
+                 <select 
                     value={aiConfig.provider}
                     onChange={e => setAiConfig({...aiConfig, provider: e.target.value as 'gemini' | 'openai'})}
-                    className="bg-white text-xs border border-slate-200 rounded-lg px-3 py-1 focus:ring-1 focus:ring-indigo-500 text-slate-800 cursor-pointer shadow-sm"
+                    className="bg-transparent text-xs font-bold border-0 rounded-lg px-3 py-1.5 focus:ring-0 text-slate-700 cursor-pointer"
                   >
-                    <option value="gemini">Gemini AI</option>
+                    <option value="gemini">Gemini</option>
                     <option value="openai">OpenAI</option>
                   </select>
                 
                   <div className="h-4 w-px bg-slate-200"></div>
-
+ 
                   <select
                     value={aiConfig.provider === 'gemini' ? aiConfig.geminiModel : aiConfig.openAIModel}
                     onChange={e => {
@@ -258,66 +466,53 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                         setAiConfig({...aiConfig, geminiModel: val as any});
                       } else {
                         setAiConfig({...aiConfig, openAIModel: val as any});
-                      }
+                       }
                     }}
-                    className="bg-white text-xs border border-slate-200 rounded-lg px-3 py-1 focus:ring-1 focus:ring-indigo-500 text-slate-800 cursor-pointer shadow-sm"
+                    className="bg-transparent text-xs font-bold border-0 rounded-lg px-3 py-1.5 focus:ring-0 text-slate-700 cursor-pointer"
                   >
                     {aiConfig.provider === 'gemini' ? (
                       <>
-                        <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
-                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
-                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                        <option value="gemini-3-flash-preview">3 Flash</option>
+                        <option value="gemini-3.1-pro-preview">3.1 Pro</option>
+                        <option value="gemini-3.1-flash-lite">3.1 Lite</option>
                       </>
                     ) : (
                       <>
                         <option value="gpt-5.4-pro">GPT 5.4 Pro</option>
-                        <option value="gpt-5.4-mini">GPT 5.4 Mini</option>
-                        <option value="gpt-5.4-nano">GPT 5.4 Nano</option>
+                        <option value="gpt-5.4-mini">Mini</option>
+                        <option value="gpt-5.4-nano">Nano</option>
                       </>
                     )}
                   </select>
-
+ 
                   <div className="h-4 w-px bg-slate-200"></div>
-                
-                  <div className="flex flex-col gap-1">
-                    <input 
-                      type="password"
-                      placeholder={aiConfig.provider === 'gemini' ? "(可選留白) 輸入 Gemini API Key" : "(必填) 輸入 OpenAI API Key"}
-                      className="bg-white text-xs border border-slate-200 shadow-sm rounded-lg px-3 py-1 w-48 focus:ring-1 focus:ring-indigo-500 text-slate-800 h-[28px] focus-visible:outline-none placeholder:text-slate-400"
-                      value={aiConfig.provider === 'gemini' ? (aiConfig.geminiKey || '') : (aiConfig.openAIKey || '')}
-                      onChange={e => {
-                        const val = e.target.value;
-                        if (aiConfig.provider === 'gemini') {
-                          setAiConfig({...aiConfig, geminiKey: val});
-                          try {
-                            if (val) localStorage.setItem('_ws_g_key', encryptKey(val));
-                            else localStorage.removeItem('_ws_g_key');
-                          } catch (e) {}
-                        } else {
-                          setAiConfig({...aiConfig, openAIKey: val});
-                          try {
-                            if (val) localStorage.setItem('_ws_o_key', encryptKey(val));
-                            else localStorage.removeItem('_ws_o_key');
-                          } catch (e) {}
-                        }
-                      }}
-                    />
-                    <span className="text-[9px] text-slate-500 pl-1">*金鑰將加密儲存於您的瀏覽器本地端</span>
-                  </div>
-                  
-                  <a
-                    href={aiConfig.provider === 'gemini' ? "https://aistudio.google.com/app/apikey" : "https://platform.openai.com/api-keys"}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 text-[11px] font-bold text-slate-500 hover:text-indigo-600 bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 px-2 py-1 rounded-lg h-[28px] transition-colors"
-                    title="取得 API Key"
-                  >
-                    <Key size={12} />
-                    <span className="hidden sm:inline">取得金鑰</span>
-                  </a>
-                </div>
-              </div>
+ 
+                  <input 
+                    type="password"
+                    placeholder="API Key"
+                    className="bg-transparent text-xs font-bold border-0 px-3 py-1.5 focus:ring-0 text-slate-700 w-32 placeholder:text-slate-400"
+                    value={aiConfig.provider === 'gemini' ? (aiConfig.geminiKey || '') : (aiConfig.openAIKey || '')}
+                    onChange={e => {
+                      const val = e.target.value;
+                      if (aiConfig.provider === 'gemini') {
+                        setAiConfig({...aiConfig, geminiKey: val});
+                        localStorage.setItem('_ws_g_key', encryptKey(val));
+                      } else {
+                        setAiConfig({...aiConfig, openAIKey: val});
+                        localStorage.setItem('_ws_o_key', encryptKey(val));
+                      }
+                    }}
+                  />
             </div>
+            
+            <Button 
+               variant="outline" 
+               size="icon" 
+               className="rounded-xl lg:hidden bg-slate-100 text-slate-600 border-slate-200"
+               onClick={() => {}} // Could add a config modal
+            >
+              <Settings size={20} />
+            </Button>
           </div>
         </div>
       </header>
@@ -519,19 +714,115 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
         )}
 
         {activeTab === 'analysis' && result && (
-           <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+           <div id="analysis-report" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
              
-             {/* Actions and Token Usage UI */}
-             <div className="flex flex-col md:flex-row w-full items-stretch justify-between gap-4">
-               <Button 
-                  onClick={exportReportAsMarkdown}
-                  className="bg-slate-800 hover:bg-slate-900 text-white rounded-2xl shadow-lg h-auto py-4 px-6 gap-2 shrink-0 font-bold tracking-wide flex-1 md:flex-none justify-center"
-                >
-                  <Download size={20} />
-                  <span>下載完整分析報告 (Markdown)</span>
-                </Button>
+             {/* Toolbar */}
+             <div className="flex flex-col md:flex-row w-full items-center justify-between gap-4 bg-white p-4 rounded-3xl border border-slate-200 shadow-sm sticky top-[4.5rem] z-40">
+               <div className="flex flex-wrap items-center gap-2">
+                 <Button 
+                    onClick={exportToPDF}
+                    className="bg-slate-800 hover:bg-slate-900 text-white rounded-xl shadow-md h-10 px-4 gap-2 font-bold text-xs"
+                  >
+                    <Download size={16} />
+                    <span>匯出 PDF 報告</span>
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={exportReportAsMarkdown}
+                    className="rounded-xl h-10 px-4 gap-2 font-bold text-xs border-slate-200"
+                  >
+                    <Download size={16} />
+                    <span>Markdown</span>
+                  </Button>
+               </div>
+ 
+               <div className="flex items-center gap-4">
+                  <div className="h-8 w-px bg-slate-200 hidden md:block"></div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant={snapshot ? 'secondary' : 'outline'}
+                      size="sm"
+                      onClick={handleSaveSnapshot}
+                      className="rounded-xl h-10 px-4 gap-2 font-bold text-xs"
+                    >
+                      <Save size={16} />
+                      {snapshot ? '更新對照點' : '鎖定目前情境'}
+                    </Button>
+                    
+                    {snapshot && (
+                      <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                        <Button
+                          variant={compareMode ? 'default' : 'ghost'}
+                          size="sm"
+                          onClick={() => setCompareMode(!compareMode)}
+                          className={`rounded-lg h-8 px-3 gap-2 font-bold text-[11px] ${compareMode ? 'bg-indigo-500 text-white shadow-sm' : 'text-slate-500'}`}
+                        >
+                          <ArrowLeftRight size={14} />
+                          情境對照 {compareMode ? '開' : '關'}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+               </div>
+             </div>
 
-               {result.tokenUsage && (
+             {/* Sensitivity Sliders */}
+             <Card className="bg-gradient-to-br from-indigo-50 to-white border-indigo-100 shadow-sm overflow-hidden border-2">
+               <CardHeader className="pb-2">
+                 <div className="flex items-center justify-between">
+                   <CardTitle className="text-sm font-black text-indigo-700 flex items-center gap-2 uppercase tracking-widest">
+                     <Scale size={16} />
+                     互動式敏感度分析 (Sensitivity Analysis)
+                   </CardTitle>
+                   <Info size={16} className="text-indigo-300 cursor-help" />
+                 </div>
+                 <CardDescription className="text-xs">
+                   即時調整參數觀測資產壽命變化 (不消耗 Token)
+                 </CardDescription>
+               </CardHeader>
+               <CardContent className="pt-2">
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className="space-y-4">
+                     <div className="flex justify-between items-center">
+                       <Label className="text-xs font-bold">預期年化投資報酬率 (ROI): <span className="text-indigo-600 font-black">{(roi * 100).toFixed(1)}%</span></Label>
+                     </div>
+                     <input 
+                       type="range" 
+                       min="0" max="0.15" step="0.005" 
+                       value={roi} 
+                       onChange={e => setRoi(parseFloat(e.target.value))}
+                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                     />
+                     <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                       <span>保守 (0%)</span>
+                       <span>歷史均值 (7-8%)</span>
+                       <span>激進 (15%)</span>
+                     </div>
+                   </div>
+ 
+                   <div className="space-y-4">
+                     <div className="flex justify-between items-center">
+                       <Label className="text-xs font-bold">預期通膨與生活增長率: <span className="text-rose-500 font-black">{(inflation * 100).toFixed(1)}%</span></Label>
+                     </div>
+                     <input 
+                       type="range" 
+                       min="0" max="0.1" step="0.005" 
+                       value={inflation} 
+                       onChange={e => setInflation(parseFloat(e.target.value))}
+                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                     />
+                     <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-tighter">
+                       <span>通縮 (0%)</span>
+                       <span>正常通膨 (2-3%)</span>
+                       <span>高通膨 (10%)</span>
+                     </div>
+                   </div>
+                 </div>
+               </CardContent>
+             </Card>
+
+             {result.tokenUsage && (
                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between text-orange-900 shadow-[0_4px_20px_-4px_rgba(251,146,60,0.15)] relative overflow-hidden flex-1">
                   <div className="flex items-center gap-2 mb-3 md:mb-0 relative z-10 w-full md:w-auto justify-center md:justify-start">
                     <Sparkles className="text-orange-500" size={20} />
@@ -555,7 +846,6 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                   </div>
                </div>
              )}
-            </div>
 
              {/* Highlight Stats */}
              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -597,7 +887,7 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                   </div>
                   <div className="w-full bg-slate-100 h-1.5 rounded-full mt-4">
                     <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${result.taiwanPercentile}%` }}></div>
-                  </div>
+                   </div>
                 </div>
 
                 <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-5 rounded-3xl flex flex-col justify-between text-white border-0 shadow-lg col-span-1 md:col-span-2 shadow-indigo-500/20">
@@ -688,7 +978,7 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
              )}
 
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-               <Card className="lg:col-span-1 border-slate-200 shadow-sm">
+               <Card className="lg:col-span-1 border-slate-200 shadow-sm bg-white">
                  <CardHeader className="border-b border-slate-100 mb-4 bg-slate-50/50 rounded-t-3xl">
                    <CardTitle className="flex items-center gap-2 text-slate-800"><PieChartIcon size={18} className="text-indigo-500" /> 現有資產配置</CardTitle>
                  </CardHeader>
@@ -700,7 +990,7 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                           cx="50%"
                           cy="50%"
                           labelLine={{stroke: '#cbd5e1', strokeWidth: 1}}
-                          label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          label={({name, percent}: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                           innerRadius={50}
                           outerRadius={80}
                           paddingAngle={3}
@@ -715,15 +1005,48 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                       </PieChart>
                     </ResponsiveContainer>
                  </CardContent>
+                 <CardFooter className="flex-col items-stretch gap-4 pt-4 border-t border-slate-100">
+                   <div className="flex flex-col gap-1.5 mb-2">
+                      <div className="flex items-center gap-2">
+                         <Layers size={14} className="text-indigo-500" />
+                         <span className="text-xs font-bold text-slate-700">資產配置診斷 (Benchmark)</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 leading-normal">
+                        將您的「股票/基金」佔比與國際知名投資組合模型進行對照，評估您的風險承受度與資產分散程度。
+                      </p>
+                   </div>
+                   <div className="space-y-3">
+                      {Object.entries(benchmarks).map(([name, data]) => {
+                        const totalVal = Object.values(assets).reduce((a: number, b: any) => a + (Number(b)||0), 0);
+                        const stocksP = (Number(assets.stocks) / totalVal) * 100 || 0;
+                        const diff = Math.abs(stocksP - data.stocks);
+                        const isSimilar = diff < 10;
+                        
+                        return (
+                          <div key={name} className="flex items-center justify-between group">
+                             <span className="text-[10px] font-medium text-slate-500 group-hover:text-indigo-500 transition-colors uppercase tracking-wider">{name}</span>
+                             <div className="flex items-center gap-2">
+                                <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                   <div className="h-full bg-slate-300 rounded-full" style={{ width: `${data.stocks}%` }}></div>
+                                </div>
+                                <span className={`text-[10px] font-black ${isSimilar ? 'text-emerald-500' : 'text-slate-400'}`}>
+                                  {isSimilar ? '您的配置接近' : `目標 ${Math.round(data.stocks)}%`}
+                                </span>
+                             </div>
+                          </div>
+                        );
+                      })}
+                   </div>
+                 </CardFooter>
                </Card>
 
-               <Card className="lg:col-span-2 border-slate-200 shadow-sm">
+               <Card className="lg:col-span-2 border-slate-200 shadow-sm bg-white">
                  <CardHeader className="border-b border-slate-100 mb-4 bg-slate-50/50 rounded-t-3xl flex flex-row items-center justify-between">
-                   <CardTitle className="flex items-center gap-2 text-slate-800"><TrendingUp size={18} className="text-emerald-500" /> 退休資產軌跡 (淨資產增長 & 通膨變化)</CardTitle>
+                   <CardTitle className="flex items-center gap-2 text-slate-800"><TrendingUp size={18} className="text-emerald-500" /> 退休資產軌跡 {compareMode && <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-bold ml-2">對照模式</span>}</CardTitle>
                    <Button 
                       variant="outline" 
                       size="sm" 
-                      className="text-xs h-8 text-slate-600"
+                      className="text-xs h-8 text-slate-600 border-slate-200"
                       onClick={() => setShowCalculationSteps(!showCalculationSteps)}
                     >
                       {showCalculationSteps ? '隱藏計算過程' : '查看計算過程'}
@@ -735,16 +1058,17 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                         <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.calculationSteps.replace(/\\n/g, '\n')}</ReactMarkdown>
                       </div>
                     )}
-                    <div className="h-64">
+                    <div className="h-80">
                       <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={generateProjection()} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                      <LineChart data={combinedChartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                         <XAxis dataKey="age" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                         <YAxis yAxisId="left" tickFormatter={(v) => `${(v/10000).toFixed(0)}W`} stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                         <RechartsTooltip formatter={(value: number) => formatCurrency(value)} labelFormatter={(label) => `年齡: ${label}歲`} contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', color: '#1e293b', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                         <Legend />
-                        <Line yAxisId="left" type="monotone" dataKey="NetWorth" stroke="#10b981" strokeWidth={3} dot={false} name="淨資產" />
-                        <Line yAxisId="left" type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} dot={false} name="預期年支出 (含通膨)" />
+                        <Line yAxisId="left" type="monotone" dataKey="NetWorth" stroke="#10b981" strokeWidth={4} dot={false} name="淨資產 (當前參數)" />
+                        {compareMode && <Line yAxisId="left" type="monotone" dataKey="PrevNetWorth" stroke="#6366f1" strokeWidth={2} strokeDasharray="5 5" dot={false} name="淨資產 (前次鎖定)" />}
+                        <Line yAxisId="left" type="monotone" dataKey="Expenses" stroke="#f43f5e" strokeWidth={2} dot={false} name="預期年支出 (目前通膨)" />
                       </LineChart>
                     </ResponsiveContainer>
                     </div>
