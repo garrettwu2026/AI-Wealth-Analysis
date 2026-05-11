@@ -1,0 +1,6 @@
+{
+  "name": "WealthScope AI",
+  "description": "Vibrant and interactive AI-powered asset analysis and retirement planning tool. Uses Gemini and OpenAI to estimate global wealth percentiles and FIRE goals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
