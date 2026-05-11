@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key } from 'lucide-react';
+import { Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key, Download } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './components/ui/card';
 import { Input, Label } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -151,6 +151,67 @@ export default function App() {
        currentExpense *= (1 + inflationRate);
     }
     return data;
+  };
+
+  const exportReportAsMarkdown = () => {
+    if (!result) return;
+    
+    const totalAssets = Object.values(assets).reduce((a, b) => a + b, 0);
+    const totalLiabilities = Object.values(liabilities).reduce((a, b) => a + b, 0) - liabilities.carLoanYearsRemaining; // Note: hacky summation assuming others are amounts
+    const actualLiabilities = liabilities.mortgage + liabilities.personalLoan + liabilities.carLoan;
+
+    const markdown = `# 財富與退休深度診斷報告
+
+## 基本資料
+* **目前年紀**: ${retirement.currentAge} 歲
+* **預期壽終**: ${retirement.targetLifespan} 歲
+* **年總收入**: ${formatCurrency(retirement.annualIncome)} TWD
+* **年生活支出**: ${formatCurrency(retirement.annualExpense)} TWD
+* **每年可再投資**: ${formatCurrency(retirement.annualInvestable)} TWD
+* **目前淨資產**: ${formatCurrency(totalAssets - actualLiabilities)} TWD
+
+## 預估 FIRE 財務獨立年齡
+* **預估 FIRE 年齡**: ${result.fireAge} 歲
+* **當前 FIRE 目標金額**: ${formatCurrency(result.fireTargetAmount || (retirement.annualExpense / 0.047))} TWD
+
+### 推導過程
+${result.fireCalculationSteps}
+
+---
+
+## 財富結構與PR值
+* **台灣財富 PR 值**: PR ${result.taiwanPercentile}
+* **全球財富 PR 值**: PR ${result.worldPercentile}
+
+### PR 值推導細節
+${result.prCalculationSteps}
+
+---
+
+## 退休資產軌跡
+### 計算基礎與參數說明
+${result.calculationSteps}
+
+---
+
+## AI 深度診斷報告
+${result.analysisMarkdown}
+
+---
+
+## 具體優化建議
+${result.recommendations.map(r => `* ${r}`).join('\\n')}
+`;
+
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `FIRE_Analysis_Report_${new Date().toISOString().slice(0,10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const formatCurrency = (val: number) => {
@@ -460,9 +521,18 @@ export default function App() {
         {activeTab === 'analysis' && result && (
            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
              
-             {/* Token Usage UI moved to the very top */}
-             {result.tokenUsage && (
-               <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between text-orange-900 shadow-[0_4px_20px_-4px_rgba(251,146,60,0.15)] relative overflow-hidden">
+             {/* Actions and Token Usage UI */}
+             <div className="flex flex-col md:flex-row w-full items-stretch justify-between gap-4">
+               <Button 
+                  onClick={exportReportAsMarkdown}
+                  className="bg-slate-800 hover:bg-slate-900 text-white rounded-2xl shadow-lg h-auto py-4 px-6 gap-2 shrink-0 font-bold tracking-wide flex-1 md:flex-none justify-center"
+                >
+                  <Download size={20} />
+                  <span>下載完整分析報告 (Markdown)</span>
+                </Button>
+
+               {result.tokenUsage && (
+                 <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between text-orange-900 shadow-[0_4px_20px_-4px_rgba(251,146,60,0.15)] relative overflow-hidden flex-1">
                   <div className="flex items-center gap-2 mb-3 md:mb-0 relative z-10 w-full md:w-auto justify-center md:justify-start">
                     <Sparkles className="text-orange-500" size={20} />
                     <span className="font-bold text-[15px] tracking-wide text-orange-700">AI 運算總計花費</span>
@@ -485,6 +555,7 @@ export default function App() {
                   </div>
                </div>
              )}
+            </div>
 
              {/* Highlight Stats */}
              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
