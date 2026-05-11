@@ -40,8 +40,9 @@ export type AnalysisResult = {
   worldPercentile: number;
   prCalculationSteps: string;
   taiwanDeciles: number[];
-  fireAge: number | null;
-  fireYear: number | null;
+  assetsAtLifespanEnd: number;
+  isSufficient: boolean;
+  fundsExhaustedAge: number | null;
   calculationSteps: string;
   analysisMarkdown: string;
   recommendations: string[];

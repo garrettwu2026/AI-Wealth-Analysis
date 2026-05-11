@@ -101,7 +101,7 @@ export default function App() {
     const investable = Number(retirement.annualInvestable);
     const postRetirementIncome = Number(retirement.postRetirementIncome) || 0;
     const startAge = Number(retirement.currentAge);
-    const fireAge = result?.fireAge || Number(retirement.retirementAge);
+    const retirementAge = Number(retirement.retirementAge);
     const targetLifespan = Number(retirement.targetLifespan) || 120;
 
     for (let age = startAge; age <= targetLifespan; age++) {
@@ -111,7 +111,7 @@ export default function App() {
          Expenses: Math.round(currentExpense) 
        });
        
-       if (age < fireAge) {
+       if (age < retirementAge) {
          simulatedNetWorth = simulatedNetWorth * (1 + roi) + investable;
        } else {
          simulatedNetWorth = simulatedNetWorth * (1 + roi) - currentExpense + postRetirementIncome;
@@ -453,11 +453,13 @@ export default function App() {
                   </div>
                 )}
 
-                <div className="bg-emerald-500 border border-emerald-400 rounded-3xl p-5 flex flex-col justify-between col-span-1 md:col-span-2 shadow-lg shadow-emerald-500/20 text-white">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100">預期達成 FIRE 目標年齡</span>
+                <div className={`border rounded-3xl p-5 flex flex-col justify-between col-span-1 md:col-span-2 shadow-lg text-white ${result.isSufficient ? 'bg-emerald-500 border-emerald-400 shadow-emerald-500/20' : 'bg-rose-500 border-rose-400 shadow-rose-500/20'}`}>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100/70">最終退休資金檢定</span>
                   <div className="mt-4">
-                    <div className="text-5xl font-black italic">{result.fireAge} <span className="text-2xl font-bold">歲</span></div>
-                    <div className="text-xs text-emerald-100 mt-1 font-bold tracking-widest uppercase">預期達成西元年份: {result.fireYear}</div>
+                    <div className="text-4xl font-black italic">
+                      {result.isSufficient ? '資金足以度過餘生' : `${result.fundsExhaustedAge} 歲面臨耗盡`} 
+                    </div>
+                    <div className="text-xs text-white/80 mt-1 font-bold tracking-widest uppercase">終老 ({retirement.targetLifespan}歲) 剩餘淨值預估: {formatCurrency(result.assetsAtLifespanEnd)}</div>
                   </div>
                 </div>
                 
