@@ -9,8 +9,10 @@ export type AssetData = {
 
 export type LiabilityData = {
   mortgage: number;
+  mortgageYearsRemaining: number;
   personalLoan: number;
   carLoan: number;
+  carLoanYearsRemaining: number;
 };
 
 export type RetirementData = {
@@ -25,7 +27,7 @@ export type RetirementData = {
 
 export type APIProvider = 'gemini' | 'openai';
 export type GeminiModel = 'gemini-3-flash-preview' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite';
-export type OpenAIModel = 'gpt-5.4-nano' | 'gpt-4o-mini' | 'gpt-4o'; // Provide reasonable defaults, mapping the request
+export type OpenAIModel = 'gpt-5.4-pro' | 'gpt-5.4-mini' | 'gpt-5.4-nano';
 
 export type AIConfig = {
   provider: APIProvider;
@@ -33,6 +35,12 @@ export type AIConfig = {
   openAIKey?: string;
   geminiModel: GeminiModel;
   openAIModel: OpenAIModel | string; 
+};
+
+export type TokenUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalCostTWD: number;
 };
 
 export type AnalysisResult = {
@@ -46,4 +54,8 @@ export type AnalysisResult = {
   calculationSteps: string;
   analysisMarkdown: string;
   recommendations: string[];
+  fireAge: number;
+  fireCalculationSteps: string;
+  fireTargetAmount?: number;
+  tokenUsage?: TokenUsage;
 };

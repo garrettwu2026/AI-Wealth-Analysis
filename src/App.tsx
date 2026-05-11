@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, ExternalLink, Key } from 'lucide-react';
+import { Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from './components/ui/card';
 import { Input, Label } from './components/ui/input';
 import { Button } from './components/ui/button';
@@ -7,8 +7,24 @@ import { AssetData, LiabilityData, RetirementData, AIConfig, AnalysisResult } fr
 import { analyzeWealth } from './services/ai';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
 import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
+import remarkGfm from 'remark-gfm';
 
 const COLORS = ['#f97316', '#14b8a6', '#eab308', '#6366f1', '#ec4899', '#8b5cf6'];
+
+function encryptKey(key: string) {
+  if (!key) return '';
+  return btoa(unescape(encodeURIComponent(key))).split('').reverse().join('');
+}
+
+function decryptKey(enc: string) {
+  if (!enc) return '';
+  try {
+    return decodeURIComponent(escape(atob(enc.split('').reverse().join(''))));
+  } catch (e) {
+    return '';
+  }
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'input' | 'analysis'>('input');
@@ -16,11 +32,25 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [showCalculationSteps, setShowCalculationSteps] = useState(false);
   const [showPRCalculationSteps, setShowPRCalculationSteps] = useState(false);
+  const [showFireCalculationSteps, setShowFireCalculationSteps] = useState(false);
 
-  const [aiConfig, setAiConfig] = useState<AIConfig>({
-    provider: 'gemini',
-    geminiModel: 'gemini-3.1-flash-lite',
-    openAIModel: 'gpt-5.4-nano',
+  const [aiConfig, setAiConfig] = useState<AIConfig>(() => {
+    let savedGemini = '';
+    let savedOpenAI = '';
+    try {
+      const g = localStorage.getItem('_ws_g_key');
+      if (g) savedGemini = decryptKey(g);
+      const o = localStorage.getItem('_ws_o_key');
+      if (o) savedOpenAI = decryptKey(o);
+    } catch (e) {}
+
+    return {
+      provider: 'gemini',
+      geminiModel: 'gemini-3.1-pro-preview',
+      openAIModel: 'gpt-5.4-pro',
+      geminiKey: savedGemini || '',
+      openAIKey: savedOpenAI || '',
+    };
   });
 
   const [assets, setAssets] = useState<AssetData>({
@@ -28,14 +58,16 @@ export default function App() {
     cash: 500000,
     bonds: 0,
     metals: 0,
-    crypto: 50000,
+    crypto: 0,
     realEstate: 5000000,
   });
 
   const [liabilities, setLiabilities] = useState<LiabilityData>({
     mortgage: 3000000,
+    mortgageYearsRemaining: 20,
     personalLoan: 0,
     carLoan: 500000,
+    carLoanYearsRemaining: 5,
   });
 
   const [retirement, setRetirement] = useState<RetirementData>({
@@ -177,28 +209,40 @@ export default function App() {
                       </>
                     ) : (
                       <>
-                        <option value="gpt-5.4-nano">GPT-5.4 Nano</option>
-                        <option value="gpt-4o">GPT-4o</option>
-                        <option value="gpt-4o-mini">GPT-4o Mini</option>
+                        <option value="gpt-5.4-pro">GPT 5.4 Pro</option>
+                        <option value="gpt-5.4-mini">GPT 5.4 Mini</option>
+                        <option value="gpt-5.4-nano">GPT 5.4 Nano</option>
                       </>
                     )}
                   </select>
 
                   <div className="h-4 w-px bg-slate-200"></div>
                 
-                  <input 
-                    type="password"
-                    placeholder={aiConfig.provider === 'gemini' ? "可選: Gemini API Key" : "必填: OpenAI API Key"}
-                    className="bg-white text-xs border border-slate-200 shadow-sm rounded-lg px-3 py-1 w-40 focus:ring-1 focus:ring-indigo-500 text-slate-800 h-[28px] focus-visible:outline-none placeholder:text-slate-400"
-                    value={aiConfig.provider === 'gemini' ? (aiConfig.geminiKey || '') : (aiConfig.openAIKey || '')}
-                    onChange={e => {
-                      if (aiConfig.provider === 'gemini') {
-                        setAiConfig({...aiConfig, geminiKey: e.target.value});
-                      } else {
-                        setAiConfig({...aiConfig, openAIKey: e.target.value});
-                      }
-                    }}
-                  />
+                  <div className="flex flex-col gap-1">
+                    <input 
+                      type="password"
+                      placeholder={aiConfig.provider === 'gemini' ? "(可選留白) 輸入 Gemini API Key" : "(必填) 輸入 OpenAI API Key"}
+                      className="bg-white text-xs border border-slate-200 shadow-sm rounded-lg px-3 py-1 w-48 focus:ring-1 focus:ring-indigo-500 text-slate-800 h-[28px] focus-visible:outline-none placeholder:text-slate-400"
+                      value={aiConfig.provider === 'gemini' ? (aiConfig.geminiKey || '') : (aiConfig.openAIKey || '')}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (aiConfig.provider === 'gemini') {
+                          setAiConfig({...aiConfig, geminiKey: val});
+                          try {
+                            if (val) localStorage.setItem('_ws_g_key', encryptKey(val));
+                            else localStorage.removeItem('_ws_g_key');
+                          } catch (e) {}
+                        } else {
+                          setAiConfig({...aiConfig, openAIKey: val});
+                          try {
+                            if (val) localStorage.setItem('_ws_o_key', encryptKey(val));
+                            else localStorage.removeItem('_ws_o_key');
+                          } catch (e) {}
+                        }
+                      }}
+                    />
+                    <span className="text-[9px] text-slate-500 pl-1">*金鑰將加密儲存於您的瀏覽器本地端</span>
+                  </div>
                   
                   <a
                     href={aiConfig.provider === 'gemini' ? "https://aistudio.google.com/app/apikey" : "https://platform.openai.com/api-keys"}
@@ -213,14 +257,6 @@ export default function App() {
                 </div>
               </div>
             </div>
-            
-            <button 
-              onClick={() => window.open(window.location.href, '_blank')}
-              className="flex items-center gap-2 text-xs font-bold tracking-wider bg-white border border-slate-200 text-slate-600 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 px-4 py-3 rounded-xl transition-all shadow-sm h-[60px]"
-            >
-              <ExternalLink size={16} />
-              獨立分頁開啟
-            </button>
           </div>
         </div>
       </header>
@@ -318,17 +354,29 @@ export default function App() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                         <Label>房貸 (萬)</Label>
-                        <Input type="number" value={liabilities.mortgage / 10000} onChange={e => setLiabilities({...liabilities, mortgage: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <div className="space-y-4 col-span-2 md:col-span-1 border p-4 rounded-xl bg-slate-50/50">
+                        <div className="space-y-2">
+                           <Label>房貸 (萬)</Label>
+                          <Input type="number" value={liabilities.mortgage / 10000} onChange={e => setLiabilities({...liabilities, mortgage: Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
+                        </div>
+                        <div className="space-y-2">
+                           <Label className="text-slate-500">房貸剩餘還款年數</Label>
+                          <Input type="number" value={liabilities.mortgageYearsRemaining} onChange={e => setLiabilities({...liabilities, mortgageYearsRemaining: Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                         <Label>信貸 (萬)</Label>
+                      <div className="space-y-4 col-span-2 md:col-span-1 border p-4 rounded-xl bg-slate-50/50">
+                        <div className="space-y-2">
+                           <Label>車貸 (萬)</Label>
+                          <Input type="number" value={liabilities.carLoan / 10000} onChange={e => setLiabilities({...liabilities, carLoan: Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
+                        </div>
+                        <div className="space-y-2">
+                           <Label className="text-slate-500">車貸剩餘還款年數</Label>
+                          <Input type="number" value={liabilities.carLoanYearsRemaining} onChange={e => setLiabilities({...liabilities, carLoanYearsRemaining: Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
+                        </div>
+                      </div>
+                      <div className="space-y-2 col-span-2 mt-2">
+                         <Label>信貸與其他負債 (萬)</Label>
                         <Input type="number" value={liabilities.personalLoan / 10000} onChange={e => setLiabilities({...liabilities, personalLoan: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
-                      </div>
-                      <div className="space-y-2 col-span-2 md:col-span-1">
-                         <Label>車貸 (萬)</Label>
-                        <Input type="number" value={liabilities.carLoan / 10000} onChange={e => setLiabilities({...liabilities, carLoan: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                     </div>
                   </CardContent>
@@ -412,8 +460,64 @@ export default function App() {
         {activeTab === 'analysis' && result && (
            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
              
+             {/* Token Usage UI moved to the very top */}
+             {result.tokenUsage && (
+               <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between text-orange-900 shadow-[0_4px_20px_-4px_rgba(251,146,60,0.15)] relative overflow-hidden">
+                  <div className="flex items-center gap-2 mb-3 md:mb-0 relative z-10 w-full md:w-auto justify-center md:justify-start">
+                    <Sparkles className="text-orange-500" size={20} />
+                    <span className="font-bold text-[15px] tracking-wide text-orange-700">AI 運算總計花費</span>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-center md:justify-end gap-3 text-xs font-semibold relative z-10 w-full md:w-auto">
+                    <div className="flex bg-white/70 backdrop-blur-sm px-3.5 py-2 rounded-xl border border-orange-200 shadow-sm gap-2 whitespace-nowrap text-orange-900 items-center justify-center">
+                      <span className="text-[14px]">NT$</span>
+                      <span className="text-[18px] font-black leading-none">{result.tokenUsage.totalCostTWD}</span>
+                    </div>
+                    <div className="flex gap-2">
+                       <div className="flex flex-col bg-white/60 px-3 py-1.5 rounded-lg border border-orange-100/50 min-w-24 text-center">
+                         <span className="text-[10px] text-orange-500 font-bold uppercase tracking-wider mb-0.5">輸入 Tokens</span>
+                         <span className="text-orange-800 text-[13px]">{result.tokenUsage.promptTokens.toLocaleString()}</span>
+                       </div>
+                       <div className="flex flex-col bg-white/60 px-3 py-1.5 rounded-lg border border-orange-100/50 min-w-24 text-center">
+                         <span className="text-[10px] text-orange-500 font-bold uppercase tracking-wider mb-0.5">輸出 Tokens</span>
+                         <span className="text-orange-800 text-[13px]">{result.tokenUsage.completionTokens.toLocaleString()}</span>
+                       </div>
+                    </div>
+                  </div>
+               </div>
+             )}
+
              {/* Highlight Stats */}
              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-gradient-to-br from-amber-400 to-orange-500 p-5 rounded-3xl flex flex-col justify-between text-white shadow-lg col-span-1 md:col-span-4 shadow-orange-500/20 relative overflow-hidden">
+                  <div className="absolute right-0 top-0 opacity-10 pointer-events-none">
+                    <TrendingUp size={160} className="-mt-8 -mr-8" />
+                  </div>
+                  <div className="relative z-10">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-100/80">預估 FIRE 財務獨立年齡 (4.7% 提領率)</span>
+                    <div className="mt-4 flex flex-col md:flex-row md:items-end justify-between gap-4">
+                      <div>
+                        <div className="text-6xl font-black italic">{result.fireAge} 歲</div>
+                        <div className="text-xs text-white/90 mt-1 font-bold tracking-widest uppercase">FIRE 目標: {formatCurrency(result.fireTargetAmount || (retirement.annualExpense / 0.047))} TWD</div>
+                      </div>
+                      <div className="flex md:justify-end w-full md:w-auto">
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          className="bg-white/20 hover:bg-white/30 text-white border-0 transition-colors w-full md:w-auto"
+                          onClick={() => setShowFireCalculationSteps(!showFireCalculationSteps)}
+                        >
+                          {showFireCalculationSteps ? '隱藏 FIRE 年齡計算過程' : '查看完整的 FIRE 數學推導過程'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {showFireCalculationSteps && result.fireCalculationSteps && (
+                  <div className="col-span-1 md:col-span-4 bg-orange-50 border border-orange-200 p-5 rounded-2xl text-sm prose prose-orange prose-headings:text-orange-900 text-orange-800 max-w-none shadow-sm animate-in fade-in slide-in-from-top-4 mb-4">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.fireCalculationSteps.replace(/\\n/g, '\n')}</ReactMarkdown>
+                  </div>
+                )}
                 <div className="bg-white text-slate-800 p-5 rounded-3xl flex flex-col justify-between border border-slate-200 shadow-sm col-span-1 md:col-span-2">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">台灣財富分佈PR值</span>
                   <div className="mt-4">
@@ -449,7 +553,7 @@ export default function App() {
 
                 {showPRCalculationSteps && result.prCalculationSteps && (
                   <div className="col-span-1 md:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl text-sm prose prose-slate prose-headings:text-slate-800 text-slate-700 max-w-none shadow-sm animate-in fade-in slide-in-from-top-4">
-                    <ReactMarkdown>{result.prCalculationSteps}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.prCalculationSteps.replace(/\\n/g, '\n')}</ReactMarkdown>
                   </div>
                 )}
 
@@ -557,7 +661,7 @@ export default function App() {
                  <CardContent className="mt-4 text-slate-800 flex flex-col gap-4">
                     {showCalculationSteps && result.calculationSteps && (
                       <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl text-sm prose prose-slate prose-headings:text-indigo-800 text-indigo-900 max-w-none">
-                        <ReactMarkdown>{result.calculationSteps}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.calculationSteps.replace(/\\n/g, '\n')}</ReactMarkdown>
                       </div>
                     )}
                     <div className="h-64">
@@ -585,7 +689,7 @@ export default function App() {
                      </CardTitle>
                   </CardHeader>
                   <CardContent className="prose prose-slate prose-a:text-indigo-600 prose-headings:text-slate-800 max-w-none text-slate-700 leading-relaxed">
-                    <ReactMarkdown>{result.analysisMarkdown}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{result.analysisMarkdown.replace(/\\n/g, '\n')}</ReactMarkdown>
                   </CardContent>
                </Card>
 
