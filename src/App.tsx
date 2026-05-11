@@ -84,7 +84,7 @@ export default function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const totalAssets = Object.values(assets).reduce((a, b) => a + (Number(b) || 0), 0);
-  const totalLiabilities = Object.values(liabilities).reduce((a, b) => a + (Number(b) || 0), 0);
+  const totalLiabilities = (Number(liabilities.mortgage) || 0) + (Number(liabilities.personalLoan) || 0) + (Number(liabilities.carLoan) || 0);
   const netWorth = totalAssets - totalLiabilities;
 
   const handleAnalyze = async () => {
@@ -156,9 +156,9 @@ export default function App() {
   const exportReportAsMarkdown = () => {
     if (!result) return;
     
-    const totalAssets = Object.values(assets).reduce((a, b) => a + b, 0);
-    const totalLiabilities = Object.values(liabilities).reduce((a, b) => a + b, 0) - liabilities.carLoanYearsRemaining; // Note: hacky summation assuming others are amounts
-    const actualLiabilities = liabilities.mortgage + liabilities.personalLoan + liabilities.carLoan;
+    const totalAssets = Object.values(assets).reduce((a, b) => Number(a) + (Number(b) || 0), 0);
+    const totalLiabilities = Object.values(liabilities).reduce((a, b) => Number(a) + (Number(b) || 0), 0) - (Number(liabilities.carLoanYearsRemaining) || 0) - (Number(liabilities.mortgageYearsRemaining) || 0); // Note: hacky summation assuming others are amounts
+    const actualLiabilities = (Number(liabilities.mortgage) || 0) + (Number(liabilities.personalLoan) || 0) + (Number(liabilities.carLoan) || 0);
 
     const markdown = `# 財富與退休深度診斷報告
 
@@ -378,27 +378,27 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>股票/基金 (萬)</Label>
-                      <Input type="number" value={assets.stocks / 10000} onChange={e => setAssets({...assets, stocks: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.stocks === '' ? '' : assets.stocks / 10000} onChange={e => setAssets({...assets, stocks: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>現金/儲蓄 (萬)</Label>
-                      <Input type="number" value={assets.cash / 10000} onChange={e => setAssets({...assets, cash: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.cash === '' ? '' : assets.cash / 10000} onChange={e => setAssets({...assets, cash: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>債券 (萬)</Label>
-                      <Input type="number" value={assets.bonds / 10000} onChange={e => setAssets({...assets, bonds: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.bonds === '' ? '' : assets.bonds / 10000} onChange={e => setAssets({...assets, bonds: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>貴金屬 (萬)</Label>
-                      <Input type="number" value={assets.metals / 10000} onChange={e => setAssets({...assets, metals: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.metals === '' ? '' : assets.metals / 10000} onChange={e => setAssets({...assets, metals: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>加密貨幣 (萬)</Label>
-                      <Input type="number" value={assets.crypto / 10000} onChange={e => setAssets({...assets, crypto: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.crypto === '' ? '' : assets.crypto / 10000} onChange={e => setAssets({...assets, crypto: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>不動產 (萬)</Label>
-                      <Input type="number" value={assets.realEstate / 10000} onChange={e => setAssets({...assets, realEstate: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.realEstate === '' ? '' : assets.realEstate / 10000} onChange={e => setAssets({...assets, realEstate: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                   </div>
                 </CardContent>
@@ -418,26 +418,26 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                       <div className="space-y-4 col-span-2 md:col-span-1 border p-4 rounded-xl bg-slate-50/50">
                         <div className="space-y-2">
                            <Label>房貸 (萬)</Label>
-                          <Input type="number" value={liabilities.mortgage / 10000} onChange={e => setLiabilities({...liabilities, mortgage: Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.mortgage === '' ? '' : liabilities.mortgage / 10000} onChange={e => setLiabilities({...liabilities, mortgage: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
                         </div>
                         <div className="space-y-2">
                            <Label className="text-slate-500">房貸剩餘還款年數</Label>
-                          <Input type="number" value={liabilities.mortgageYearsRemaining} onChange={e => setLiabilities({...liabilities, mortgageYearsRemaining: Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.mortgageYearsRemaining} onChange={e => setLiabilities({...liabilities, mortgageYearsRemaining: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
                         </div>
                       </div>
                       <div className="space-y-4 col-span-2 md:col-span-1 border p-4 rounded-xl bg-slate-50/50">
                         <div className="space-y-2">
                            <Label>車貸 (萬)</Label>
-                          <Input type="number" value={liabilities.carLoan / 10000} onChange={e => setLiabilities({...liabilities, carLoan: Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.carLoan === '' ? '' : liabilities.carLoan / 10000} onChange={e => setLiabilities({...liabilities, carLoan: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
                         </div>
                         <div className="space-y-2">
                            <Label className="text-slate-500">車貸剩餘還款年數</Label>
-                          <Input type="number" value={liabilities.carLoanYearsRemaining} onChange={e => setLiabilities({...liabilities, carLoanYearsRemaining: Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.carLoanYearsRemaining} onChange={e => setLiabilities({...liabilities, carLoanYearsRemaining: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
                         </div>
                       </div>
                       <div className="space-y-2 col-span-2 mt-2">
                          <Label>信貸與其他負債 (萬)</Label>
-                        <Input type="number" value={liabilities.personalLoan / 10000} onChange={e => setLiabilities({...liabilities, personalLoan: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={liabilities.personalLoan === '' ? '' : liabilities.personalLoan / 10000} onChange={e => setLiabilities({...liabilities, personalLoan: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                     </div>
                   </CardContent>
@@ -455,31 +455,31 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                      <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>目前年紀</Label>
-                        <Input type="number" value={retirement.currentAge} onChange={e => setRetirement({...retirement, currentAge: Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.currentAge} onChange={e => setRetirement({...retirement, currentAge: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>預估退休年紀</Label>
-                        <Input type="number" value={retirement.retirementAge} onChange={e => setRetirement({...retirement, retirementAge: Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.retirementAge} onChange={e => setRetirement({...retirement, retirementAge: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>預估最終壽命</Label>
-                        <Input type="number" value={retirement.targetLifespan} onChange={e => setRetirement({...retirement, targetLifespan: Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.targetLifespan} onChange={e => setRetirement({...retirement, targetLifespan: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>年總收入 (萬)</Label>
-                        <Input type="number" value={retirement.annualIncome / 10000} onChange={e => setRetirement({...retirement, annualIncome: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.annualIncome === '' ? '' : retirement.annualIncome / 10000} onChange={e => setRetirement({...retirement, annualIncome: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>年生活支出 (萬)</Label>
-                        <Input type="number" value={retirement.annualExpense / 10000} onChange={e => setRetirement({...retirement, annualExpense: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.annualExpense === '' ? '' : retirement.annualExpense / 10000} onChange={e => setRetirement({...retirement, annualExpense: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>每年可再投資金額 (萬)</Label>
-                        <Input type="number" value={retirement.annualInvestable / 10000} onChange={e => setRetirement({...retirement, annualInvestable: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.annualInvestable === '' ? '' : retirement.annualInvestable / 10000} onChange={e => setRetirement({...retirement, annualInvestable: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>退休後工作收入(每年/萬)</Label>
-                        <Input type="number" value={retirement.postRetirementIncome / 10000} onChange={e => setRetirement({...retirement, postRetirementIncome: Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.postRetirementIncome === '' ? '' : retirement.postRetirementIncome / 10000} onChange={e => setRetirement({...retirement, postRetirementIncome: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                     </div>
                   </CardContent>

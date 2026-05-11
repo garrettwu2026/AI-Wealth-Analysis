@@ -1,28 +1,28 @@
 export type AssetData = {
-  stocks: number;
-  cash: number;
-  bonds: number;
-  metals: number;
-  crypto: number;
-  realEstate: number;
+  stocks: number | '';
+  cash: number | '';
+  bonds: number | '';
+  metals: number | '';
+  crypto: number | '';
+  realEstate: number | '';
 };
 
 export type LiabilityData = {
-  mortgage: number;
-  mortgageYearsRemaining: number;
-  personalLoan: number;
-  carLoan: number;
-  carLoanYearsRemaining: number;
+  mortgage: number | '';
+  mortgageYearsRemaining: number | '';
+  personalLoan: number | '';
+  carLoan: number | '';
+  carLoanYearsRemaining: number | '';
 };
 
 export type RetirementData = {
-  currentAge: number;
-  retirementAge: number;
-  targetLifespan: number;
-  annualIncome: number;
-  annualExpense: number;
-  annualInvestable: number;
-  postRetirementIncome: number;
+  currentAge: number | '';
+  retirementAge: number | '';
+  targetLifespan: number | '';
+  annualIncome: number | '';
+  annualExpense: number | '';
+  annualInvestable: number | '';
+  postRetirementIncome: number | '';
 };
 
 export type APIProvider = 'gemini' | 'openai';
