@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "UserFinancialData": {
+      "title": "User Financial Data",
+      "description": "Stores user assets, liabilities, and retirement settings for cloud sync.",
+      "type": "object",
+      "properties": {
+        "assets": {
+          "type": "object",
+          "properties": {
+            "stocks": { "type": "number" },
+            "cash": { "type": "number" },
+            "bonds": { "type": "number" },
+            "metals": { "type": "number" },
+            "crypto": { "type": "number" },
+            "realEstate": { "type": "number" }
+          }
+        },
+        "liabilities": {
+          "type": "object",
+          "properties": {
+            "mortgage": { "type": "number" },
+            "mortgageYearsRemaining": { "type": "number" },
+            "personalLoan": { "type": "number" },
+            "carLoan": { "type": "number" },
+            "carLoanYearsRemaining": { "type": "number" }
+          }
+        },
+        "retirement": {
+          "type": "object",
+          "properties": {
+            "currentAge": { "type": "number" },
+            "retirementAge": { "type": "number" },
+            "targetLifespan": { "type": "number" },
+            "annualIncome": { "type": "number" },
+            "annualExpense": { "type": "number" },
+            "annualInvestable": { "type": "number" },
+            "postRetirementIncome": { "type": "number" }
+          }
+        },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "userId": { "type": "string" }
+      },
+      "required": ["assets", "liabilities", "retirement", "userId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/userData/{userId}": {
+      "schema": "UserFinancialData",
+      "description": "User specific financial settings and data."
+    }
+  }
+}

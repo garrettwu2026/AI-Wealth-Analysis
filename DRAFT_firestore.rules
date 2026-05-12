@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserFinancialData(data) {
+      return data.keys().hasAll(['assets', 'liabilities', 'retirement', 'userId', 'updatedAt']) &&
+             data.keys().size() == 5 &&
+             data.userId is string &&
+             data.userId.size() <= 128 &&
+             data.updatedAt == request.time &&
+             data.assets is map &&
+             data.assets.stocks is number && data.assets.stocks >= 0 &&
+             data.assets.cash is number && data.assets.cash >= 0 &&
+             data.liabilities is map &&
+             data.retirement is map;
+    }
+
+    // --- Collection Routes ---
+    match /userData/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      
+      allow create: if isOwner(userId) && 
+                      isValidUserFinancialData(incoming()) &&
+                      isValidId(userId);
+
+      allow update: if isOwner(userId) && 
+                      isValidUserFinancialData(incoming()) &&
+                      incoming().userId == userId &&
+                      incoming().userId == existing().userId;
+      
+      allow delete: if isOwner(userId);
+    }
+  }
+}

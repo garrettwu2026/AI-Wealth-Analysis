@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 export {  }; // To satisfy imports if needed
 import { MessageSquare, Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key, Download,
-  Plus, Save, History, ArrowLeftRight, Layers, Scale, Info
+  Plus, Save, History, ArrowLeftRight, Layers, Scale, Info, LogOut, User, Cloud, CloudOff
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from './components/ui/card';
 import { Input, Label } from './components/ui/input';
@@ -16,6 +16,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { WealthChat } from './components/WealthChat';
+import { auth, googleProvider, db, doc, setDoc, onSnapshot, serverTimestamp, signInWithPopup, signOut, OperationType, handleFirestoreError } from './lib/firebase';
+import { User as FirebaseUser } from 'firebase/auth';
 
 const COLORS = ['#f97316', '#14b8a6', '#eab308', '#6366f1', '#ec4899', '#8b5cf6'];
 
@@ -45,6 +47,83 @@ export default function App() {
   const [showCalculationSteps, setShowCalculationSteps] = useState(false);
   const [showPRCalculationSteps, setShowPRCalculationSteps] = useState(false);
   const [showFireCalculationSteps, setShowFireCalculationSteps] = useState(false);
+  
+  // Firebase Auth
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((u) => {
+      setUser(u);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync from Cloud
+  useEffect(() => {
+    if (!user) return;
+    
+    setIsSyncing(true);
+    const unsubscribe = onSnapshot(doc(db, 'userData', user.uid), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.assets) setAssets(data.assets);
+        if (data.liabilities) setLiabilities(data.liabilities);
+        if (data.retirement) setRetirement(data.retirement);
+        if (data.updatedAt) setLastSync(data.updatedAt.toDate());
+      }
+      setIsSyncing(false);
+    }, (err) => {
+      console.error('Sync error:', err);
+      setIsSyncing(false);
+    });
+    
+    return () => unsubscribe();
+  }, [user]);
+
+  const saveToCloud = async (overrideAssets?: AssetData, overrideLiabilities?: LiabilityData, overrideRetirement?: RetirementData) => {
+    if (!user) return;
+    
+    try {
+      setIsSyncing(true);
+      const dataToSave = {
+        assets: overrideAssets || assets,
+        liabilities: overrideLiabilities || liabilities,
+        retirement: overrideRetirement || retirement,
+        userId: user.uid,
+        updatedAt: serverTimestamp()
+      };
+      
+      // Clean up empty strings for Firestore
+      const cleanData = JSON.parse(JSON.stringify(dataToSave, (key, value) => value === '' ? 0 : value));
+      
+      await setDoc(doc(db, 'userData', user.uid), cleanData);
+      setLastSync(new Date());
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `userData/${user.uid}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      // Reset to defaults or keep local? 
+      // For now let's just keep local but clear user
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
 
   // Sensitivity Analysis
   const [roi, setRoi] = useState(0.06);
@@ -119,6 +198,12 @@ export default function App() {
 
   const handleAnalyze = async () => {
     if (loading) return;
+    
+    // Save to cloud before analysis if user is logged in
+    if (user) {
+      await saveToCloud();
+    }
+
     try {
       setLoading(true);
       setLoadingStep(0);
@@ -554,6 +639,51 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
           </div>
  
           <div className="flex items-center gap-3">
+            {user ? (
+              <div className="flex items-center gap-3 bg-slate-100 pr-3 pl-1.5 py-1 rounded-2xl border border-slate-200">
+                <div className="flex items-center gap-2">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt={user.displayName || 'User'} className="w-7 h-7 rounded-full border border-white" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-7 h-7 bg-indigo-500 rounded-full flex items-center justify-center text-white text-[10px] font-bold">
+                      {user.displayName?.charAt(0) || 'U'}
+                    </div>
+                  )}
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-slate-700 leading-none">{user.displayName}</span>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {isSyncing ? (
+                        <Loader2 size={8} className="animate-spin text-indigo-500" />
+                      ) : (
+                        <Cloud size={8} className="text-emerald-500" />
+                      )}
+                      <span className="text-[8px] text-slate-400 font-medium whitespace-nowrap">
+                        {isSyncing ? '同步中...' : lastSync ? `已同步 ${lastSync.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '雲端已就緒'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="h-6 w-px bg-slate-200 mx-1"></div>
+                <button 
+                  onClick={handleLogout}
+                  className="p-1 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
+                  title="登出"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            ) : (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleLogin}
+                className="rounded-xl bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100 h-9 font-bold text-xs gap-2"
+              >
+                <Cloud size={16} />
+                <span>啟動雲端存檔</span>
+              </Button>
+            )}
+
             <div className="hidden lg:flex flex-wrap items-center gap-3 bg-slate-100 border border-slate-200 p-1.5 rounded-2xl shadow-inner">
                  <select 
                     value={aiConfig.provider}
@@ -681,27 +811,57 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>股票/基金 (萬)</Label>
-                      <Input type="number" value={assets.stocks === '' ? '' : assets.stocks / 10000} onChange={e => setAssets({...assets, stocks: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.stocks === '' ? '' : assets.stocks / 10000} onChange={e => {
+                        const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                        const next = {...assets, stocks: val};
+                        setAssets(next);
+                        saveToCloud(next);
+                      }} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>現金/儲蓄 (萬)</Label>
-                      <Input type="number" value={assets.cash === '' ? '' : assets.cash / 10000} onChange={e => setAssets({...assets, cash: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.cash === '' ? '' : assets.cash / 10000} onChange={e => {
+                        const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                        const next = {...assets, cash: val};
+                        setAssets(next);
+                        saveToCloud(next);
+                      }} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>債券 (萬)</Label>
-                      <Input type="number" value={assets.bonds === '' ? '' : assets.bonds / 10000} onChange={e => setAssets({...assets, bonds: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.bonds === '' ? '' : assets.bonds / 10000} onChange={e => {
+                        const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                        const next = {...assets, bonds: val};
+                        setAssets(next);
+                        saveToCloud(next);
+                      }} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>貴金屬 (萬)</Label>
-                      <Input type="number" value={assets.metals === '' ? '' : assets.metals / 10000} onChange={e => setAssets({...assets, metals: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.metals === '' ? '' : assets.metals / 10000} onChange={e => {
+                        const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                        const next = {...assets, metals: val};
+                        setAssets(next);
+                        saveToCloud(next);
+                      }} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>加密貨幣 (萬)</Label>
-                      <Input type="number" value={assets.crypto === '' ? '' : assets.crypto / 10000} onChange={e => setAssets({...assets, crypto: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.crypto === '' ? '' : assets.crypto / 10000} onChange={e => {
+                        const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                        const next = {...assets, crypto: val};
+                        setAssets(next);
+                        saveToCloud(next);
+                      }} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <Label>不動產 (萬)</Label>
-                      <Input type="number" value={assets.realEstate === '' ? '' : assets.realEstate / 10000} onChange={e => setAssets({...assets, realEstate: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                      <Input type="number" value={assets.realEstate === '' ? '' : assets.realEstate / 10000} onChange={e => {
+                        const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                        const next = {...assets, realEstate: val};
+                        setAssets(next);
+                        saveToCloud(next);
+                      }} className="bg-slate-50 focus:bg-white transition-colors" />
                     </div>
                   </div>
                 </CardContent>
@@ -721,26 +881,51 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                       <div className="space-y-4 col-span-2 md:col-span-1 border p-4 rounded-xl bg-slate-50/50">
                         <div className="space-y-2">
                            <Label>房貸 (萬)</Label>
-                          <Input type="number" value={liabilities.mortgage === '' ? '' : liabilities.mortgage / 10000} onChange={e => setLiabilities({...liabilities, mortgage: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.mortgage === '' ? '' : liabilities.mortgage / 10000} onChange={e => {
+                            const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                            const next = {...liabilities, mortgage: val};
+                            setLiabilities(next);
+                            saveToCloud(undefined, next);
+                          }} className="bg-white focus:bg-white transition-colors" />
                         </div>
                         <div className="space-y-2">
                            <Label className="text-slate-500">房貸剩餘還款年數</Label>
-                          <Input type="number" value={liabilities.mortgageYearsRemaining} onChange={e => setLiabilities({...liabilities, mortgageYearsRemaining: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.mortgageYearsRemaining} onChange={e => {
+                            const val = (e.target.value === '' ? '' : Number(e.target.value)) as number | '';
+                            const next = {...liabilities, mortgageYearsRemaining: val};
+                            setLiabilities(next);
+                            saveToCloud(undefined, next);
+                          }} className="bg-white focus:bg-white transition-colors" />
                         </div>
                       </div>
                       <div className="space-y-4 col-span-2 md:col-span-1 border p-4 rounded-xl bg-slate-50/50">
                         <div className="space-y-2">
                            <Label>車貸 (萬)</Label>
-                          <Input type="number" value={liabilities.carLoan === '' ? '' : liabilities.carLoan / 10000} onChange={e => setLiabilities({...liabilities, carLoan: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.carLoan === '' ? '' : liabilities.carLoan / 10000} onChange={e => {
+                            const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                            const next = {...liabilities, carLoan: val};
+                            setLiabilities(next);
+                            saveToCloud(undefined, next);
+                          }} className="bg-white focus:bg-white transition-colors" />
                         </div>
                         <div className="space-y-2">
                            <Label className="text-slate-500">車貸剩餘還款年數</Label>
-                          <Input type="number" value={liabilities.carLoanYearsRemaining} onChange={e => setLiabilities({...liabilities, carLoanYearsRemaining: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-white focus:bg-white transition-colors" />
+                          <Input type="number" value={liabilities.carLoanYearsRemaining} onChange={e => {
+                            const val = (e.target.value === '' ? '' : Number(e.target.value)) as number | '';
+                            const next = {...liabilities, carLoanYearsRemaining: val};
+                            setLiabilities(next);
+                            saveToCloud(undefined, next);
+                          }} className="bg-white focus:bg-white transition-colors" />
                         </div>
                       </div>
                       <div className="space-y-2 col-span-2 mt-2">
                          <Label>信貸與其他負債 (萬)</Label>
-                        <Input type="number" value={liabilities.personalLoan === '' ? '' : liabilities.personalLoan / 10000} onChange={e => setLiabilities({...liabilities, personalLoan: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={liabilities.personalLoan === '' ? '' : liabilities.personalLoan / 10000} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                          const next = {...liabilities, personalLoan: val};
+                          setLiabilities(next);
+                          saveToCloud(undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                     </div>
                   </CardContent>
@@ -758,31 +943,66 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                      <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>目前年紀</Label>
-                        <Input type="number" value={retirement.currentAge} onChange={e => setRetirement({...retirement, currentAge: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.currentAge} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value)) as number | '';
+                          const next = {...retirement, currentAge: val};
+                          setRetirement(next);
+                          saveToCloud(undefined, undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>預估退休年紀</Label>
-                        <Input type="number" value={retirement.retirementAge} onChange={e => setRetirement({...retirement, retirementAge: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.retirementAge} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value)) as number | '';
+                          const next = {...retirement, retirementAge: val};
+                          setRetirement(next);
+                          saveToCloud(undefined, undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>預估最終壽命</Label>
-                        <Input type="number" value={retirement.targetLifespan} onChange={e => setRetirement({...retirement, targetLifespan: e.target.value === '' ? '' : Number(e.target.value)})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.targetLifespan} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value)) as number | '';
+                          const next = {...retirement, targetLifespan: val};
+                          setRetirement(next);
+                          saveToCloud(undefined, undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>年總收入 (萬)</Label>
-                        <Input type="number" value={retirement.annualIncome === '' ? '' : retirement.annualIncome / 10000} onChange={e => setRetirement({...retirement, annualIncome: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.annualIncome === '' ? '' : retirement.annualIncome / 10000} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                          const next = {...retirement, annualIncome: val};
+                          setRetirement(next);
+                          saveToCloud(undefined, undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>年生活支出 (萬)</Label>
-                        <Input type="number" value={retirement.annualExpense === '' ? '' : retirement.annualExpense / 10000} onChange={e => setRetirement({...retirement, annualExpense: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.annualExpense === '' ? '' : retirement.annualExpense / 10000} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                          const next = {...retirement, annualExpense: val};
+                          setRetirement(next);
+                          saveToCloud(undefined, undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>每年可再投資金額 (萬)</Label>
-                        <Input type="number" value={retirement.annualInvestable === '' ? '' : retirement.annualInvestable / 10000} onChange={e => setRetirement({...retirement, annualInvestable: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.annualInvestable === '' ? '' : retirement.annualInvestable / 10000} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                          const next = {...retirement, annualInvestable: val};
+                          setRetirement(next);
+                          saveToCloud(undefined, undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                       <div className="space-y-2">
                         <Label>退休後工作收入(每年/萬)</Label>
-                        <Input type="number" value={retirement.postRetirementIncome === '' ? '' : retirement.postRetirementIncome / 10000} onChange={e => setRetirement({...retirement, postRetirementIncome: e.target.value === '' ? '' : Number(e.target.value) * 10000})} className="bg-slate-50 focus:bg-white transition-colors" />
+                        <Input type="number" value={retirement.postRetirementIncome === '' ? '' : retirement.postRetirementIncome / 10000} onChange={e => {
+                          const val = (e.target.value === '' ? '' : Number(e.target.value) * 10000) as number | '';
+                          const next = {...retirement, postRetirementIncome: val};
+                          setRetirement(next);
+                          saveToCloud(undefined, undefined, next);
+                        }} className="bg-slate-50 focus:bg-white transition-colors" />
                       </div>
                     </div>
                   </CardContent>

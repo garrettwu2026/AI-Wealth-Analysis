@@ -44,16 +44,14 @@ export function WealthChat({ assets, liabilities, retirement, aiConfig, isOpen, 
     try {
       const genAI = new GoogleGenAI({ apiKey: aiConfig.geminiKey || process.env.GEMINI_API_KEY || '' });
       
-      const context = `
-      用戶當前財務狀況：
-      - 資產：股票 ${assets.stocks}, 現金 ${assets.cash}, 債券 ${assets.bonds}, 房產 ${assets.realEstate}, 加密貨幣 ${assets.crypto}, 金屬 ${assets.metals}
-      - 負債：房貸 ${liabilities.mortgage}, 車貸 ${liabilities.carLoan}, 信貸 ${liabilities.personalLoan}
-      - 退休規劃：目前 ${retirement.currentAge} 歲, 預計 ${retirement.retirementAge} 歲退休, 壽命預期 ${retirement.targetLifespan}
-      - 收入：年收 ${retirement.annualIncome}, 年支出 ${retirement.annualExpense}
+      const context = `你是 Wealth AI 專屬財務策略師。
+以下是使用者的當前財務數據（新台幣 TWD）：
+- 資產：股票 ${assets.stocks}, 現金 ${assets.cash}, 債券 ${assets.bonds}, 房產 ${assets.realEstate}, 加密貨幣 ${assets.crypto}, 金屬 ${assets.metals}
+- 負債：房貸 ${liabilities.mortgage}, 車貸 ${liabilities.carLoan}, 信貸 ${liabilities.personalLoan}
+- 退休目標：目前 ${retirement.currentAge} 歲, 預計 ${retirement.retirementAge} 歲退休, 壽命預期 ${retirement.targetLifespan}
+- 收入支出：年收 ${retirement.annualIncome}, 年支出 ${retirement.annualExpense}, 每年可投資額 ${retirement.annualInvestable}
 
-      請扮演專業的財務策略師，根據以上數據回答用戶的問題。回答請簡潔、專業且具有行動力。
-      使用正體中文回答。
-      `;
+你的任務是根據這些數據提供深刻、專業且具有行動力的理財建議。回答請使用正體中文(zh-TW)。`;
 
       const history = messages.map(m => ({ 
         role: m.role === 'model' ? 'model' : 'user', 
@@ -114,9 +112,9 @@ export function WealthChat({ assets, liabilities, retirement, aiConfig, isOpen, 
                   </div>
                 )}
                 {messages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm'}`}>
-                      <div className={`prose prose-sm max-w-none ${msg.role === 'user' ? 'prose-invert' : 'prose-slate'}`}>
+                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2`}>
+                    <div className={`max-w-[85%] p-3.5 rounded-2xl text-sm shadow-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none font-medium' : 'bg-white border border-slate-200 text-slate-800 rounded-tl-none'}`}>
+                      <div className={`prose prose-sm max-w-none ${msg.role === 'user' ? 'prose-invert text-white' : 'prose-slate text-slate-800 font-medium'}`}>
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                     </div>
