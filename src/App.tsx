@@ -710,15 +710,15 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                   >
                     {aiConfig.provider === 'gemini' ? (
                       <>
-                        <option value="gemini-3-flash-preview">3 Flash</option>
-                        <option value="gemini-3.1-pro-preview">3.1 Pro</option>
-                        <option value="gemini-3.1-flash-lite">3.1 Lite</option>
+                        <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
+                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
                       </>
                     ) : (
                       <>
                         <option value="gpt-5.4-pro">GPT 5.4 Pro</option>
-                        <option value="gpt-5.4-mini">Mini</option>
-                        <option value="gpt-5.4-nano">Nano</option>
+                        <option value="gpt-5.4-mini">GPT 5.4 Mini</option>
+                        <option value="gpt-5.4-nano">GPT 5.4 Nano</option>
                       </>
                     )}
                   </select>
