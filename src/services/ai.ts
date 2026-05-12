@@ -139,9 +139,9 @@ export async function analyzeWealth(
   signal?: AbortSignal
 ): Promise<AnalysisResult> {
   
-  const totalAssets = Object.values(assets).reduce((a, b) => a + b, 0);
-  const totalLiabilities = Object.values(liabilities).reduce((a, b) => a + b, 0);
-  const netWorth = totalAssets - totalLiabilities;
+  const totalAssets = Object.values(assets).reduce((a, b) => Number(a) + (Number(b) || 0), 0);
+  const totalLiabilities = Object.values(liabilities).reduce((a, b) => Number(a) + (Number(b) || 0), 0);
+  const netWorth = Number(totalAssets) - Number(totalLiabilities);
   
   // Local deterministic calculation for projection
   const inflationRate = 0.025;

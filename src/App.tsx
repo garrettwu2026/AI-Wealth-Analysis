@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key, Download,
+export {  }; // To satisfy imports if needed
+import { MessageSquare, Settings, PieChart as PieChartIcon, TrendingUp, DollarSign, BrainCircuit, Globe, Loader2, Sparkles, Building, Coins, GraduationCap, Banknote, Landmark, CreditCard, ChevronRight, Key, Download,
   Plus, Save, History, ArrowLeftRight, Layers, Scale, Info
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from './components/ui/card';
@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence } from 'motion/react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { WealthChat } from './components/WealthChat';
 
 const COLORS = ['#f97316', '#14b8a6', '#eab308', '#6366f1', '#ec4899', '#8b5cf6'];
 
@@ -48,6 +49,8 @@ export default function App() {
   // Sensitivity Analysis
   const [roi, setRoi] = useState(0.06);
   const [inflation, setInflation] = useState(0.025);
+  const [isMonteCarloVisible, setIsMonteCarloVisible] = useState(false);
+  const [isChatVisible, setIsChatVisible] = useState(false);
 
   // Scenario Comparison
   const [snapshot, setSnapshot] = useState<{
@@ -110,9 +113,9 @@ export default function App() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const totalAssets = Object.values(assets).reduce((a, b) => a + (Number(b) || 0), 0);
-  const totalLiabilities = (Number(liabilities.mortgage) || 0) + (Number(liabilities.personalLoan) || 0) + (Number(liabilities.carLoan) || 0);
-  const netWorth = totalAssets - totalLiabilities;
+  const totalAssets: number = Object.values(assets).reduce<number>((acc, val) => acc + (Number(val) || 0), 0);
+  const totalLiabilities: number = (Number(liabilities.mortgage) || 0) + (Number(liabilities.personalLoan) || 0) + (Number(liabilities.carLoan) || 0);
+  const netWorth: number = Number(totalAssets) - Number(totalLiabilities);
 
   const handleAnalyze = async () => {
     if (loading) return;
@@ -213,9 +216,9 @@ export default function App() {
     const sAssets = snapshot.assets;
     const sLiabilities = snapshot.liabilities;
     const sRetirement = snapshot.retirement;
-    const sTotalAssets = Object.values(sAssets).reduce((a, b) => a + (Number(b) || 0), 0);
+    const sTotalAssets = Object.values(sAssets).reduce((a, b) => Number(a) + (Number(b) || 0), 0);
     const sActualLiabilities = (Number(sLiabilities.mortgage) || 0) + (Number(sLiabilities.personalLoan) || 0) + (Number(sLiabilities.carLoan) || 0);
-    const sNetWorth = sTotalAssets - sActualLiabilities;
+    const sNetWorth = (Number(sTotalAssets) || 0) - (Number(sActualLiabilities) || 0);
     
     return generateProjection(sNetWorth, snapshot.roi, snapshot.inflation, sRetirement);
   }, [compareMode, snapshot]);
@@ -254,6 +257,92 @@ export default function App() {
     '指數化三基金 (Bogleheads)': { stocks: 33, cash: 33, bonds: 33, metals: 0, crypto: 0, realEstate: 0 },
   };
 
+  // Monte Carlo Simulation Logic
+  const monteCarloData = useMemo(() => {
+    if (activeTab !== 'analysis') return [];
+    
+    const simulations = 500;
+    const years = (Number(retirement.targetLifespan) || 120) - (Number(retirement.currentAge) || 30);
+    const startAge = Number(retirement.currentAge) || 30;
+    const retirementAge = Number(retirement.retirementAge) || 55;
+    const postRetirementInc = Number(retirement.postRetirementIncome) || 0;
+    const investable = Number(retirement.annualInvestable) || 0;
+    
+    // Estimate volatility based on allocation
+    const totalA = Math.max(1, totalAssets);
+    const weights = {
+      stocks: (Number(assets.stocks) || 0) / totalA,
+      bonds: (Number(assets.bonds) || 0) / totalA,
+      realEstate: (Number(assets.realEstate) || 0) / totalA,
+      crypto: (Number(assets.crypto) || 0) / totalA,
+      metals: (Number(assets.metals) || 0) / totalA,
+      cash: (Number(assets.cash) || 0) / totalA,
+    };
+    
+    const volMap = {
+      stocks: 0.18,
+      bonds: 0.06,
+      realEstate: 0.04,
+      crypto: 0.70,
+      metals: 0.15,
+      cash: 0.01
+    };
+    
+    const portfolioVol = Object.keys(weights).reduce((acc, key) => {
+      const weight = weights[key as keyof typeof weights];
+      const vol = volMap[key as keyof typeof volMap];
+      return acc + (weight * vol);
+    }, 0);
+
+    const resultsByYear: { age: number; p10: number; p50: number; p90: number; successCount: number }[] = [];
+    const allPaths: number[][] = Array.from({ length: simulations }, () => [netWorth]);
+
+    for (let sim = 0; sim < simulations; sim++) {
+      let currentNW = netWorth;
+      let currentExp = Number(retirement.annualExpense) || 600000;
+      
+      for (let y = 1; y <= years; y++) {
+        const age = startAge + y;
+        
+        // Random normal return using Box-Muller
+        const u1 = Math.random();
+        const u2 = Math.random();
+        const z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+        const randomReturn = roi + (z * portfolioVol);
+        
+        if (age < retirementAge) {
+          currentNW = (currentNW * (1 + randomReturn)) + investable;
+        } else {
+          currentNW = (currentNW * (1 + randomReturn)) - currentExp + postRetirementInc;
+        }
+        
+        currentExp *= (1 + inflation);
+        allPaths[sim].push(Math.max(-10000000, currentNW));
+      }
+    }
+
+    // Calculate percentiles
+    for (let y = 0; y <= years; y++) {
+      const valsAtYear = allPaths.map(p => p[y]).sort((a, b) => a - b);
+      const p10 = valsAtYear[Math.floor(simulations * 0.1)];
+      const p50 = valsAtYear[Math.floor(simulations * 0.5)];
+      const p90 = valsAtYear[Math.floor(simulations * 0.9)];
+      const successCount = valsAtYear.filter(v => v > 0).length;
+      
+      resultsByYear.push({
+        age: startAge + y,
+        p10: Math.round(p10),
+        p50: Math.round(p50),
+        p90: Math.round(p90),
+        successCount
+      });
+    }
+
+    return resultsByYear;
+  }, [activeTab, netWorth, roi, inflation, retirement, assets, totalAssets]);
+
+  const successProbability = monteCarloData.length > 0 ? (monteCarloData[monteCarloData.length - 1].successCount / 500) * 100 : 0;
+
   const handleSaveSnapshot = () => {
     if (!result) return;
     setSnapshot({
@@ -270,23 +359,22 @@ export default function App() {
   const exportReportAsMarkdown = () => {
     if (!result) return;
     
-    const totalAssets = Object.values(assets).reduce((a, b) => Number(a) + (Number(b) || 0), 0);
-    const totalLiabilities = Object.values(liabilities).reduce((a, b) => Number(a) + (Number(b) || 0), 0) - (Number(liabilities.carLoanYearsRemaining) || 0) - (Number(liabilities.mortgageYearsRemaining) || 0); // Note: hacky summation assuming others are amounts
-    const actualLiabilities = (Number(liabilities.mortgage) || 0) + (Number(liabilities.personalLoan) || 0) + (Number(liabilities.carLoan) || 0);
+    const totalAssetsVal: number = Object.values(assets).reduce<number>((acc, v) => acc + (Number(v) || 0), 0);
+    const actualLiabilities: number = (Number(liabilities.mortgage) || 0) + (Number(liabilities.personalLoan) || 0) + (Number(liabilities.carLoan) || 0);
 
     const markdown = `# 財富與退休深度診斷報告
 
 ## 基本資料
-* **目前年紀**: ${retirement.currentAge} 歲
-* **預期壽終**: ${retirement.targetLifespan} 歲
-* **年總收入**: ${formatCurrency(retirement.annualIncome)} TWD
-* **年生活支出**: ${formatCurrency(retirement.annualExpense)} TWD
-* **每年可再投資**: ${formatCurrency(retirement.annualInvestable)} TWD
-* **目前淨資產**: ${formatCurrency(totalAssets - actualLiabilities)} TWD
+* **目前年紀**: ${Number(retirement.currentAge) || 0} 歲
+* **預期壽終**: ${Number(retirement.targetLifespan) || 0} 歲
+* **年總收入**: ${formatCurrency(Number(retirement.annualIncome) || 0)} TWD
+* **年生活支出**: ${formatCurrency(Number(retirement.annualExpense) || 0)} TWD
+* **每年可再投資**: ${formatCurrency(Number(retirement.annualInvestable) || 0)} TWD
+* **目前淨資產**: ${formatCurrency(Number(totalAssetsVal) - Number(actualLiabilities))} TWD
 
 ## 預估 FIRE 財務獨立年齡
 * **預估 FIRE 年齡**: ${result.fireAge} 歲
-* **當前 FIRE 目標金額**: ${formatCurrency(result.fireTargetAmount || (retirement.annualExpense / 0.047))} TWD
+* **當前 FIRE 目標金額**: ${formatCurrency(result.fireTargetAmount || (Number(retirement.annualExpense) / 0.047))} TWD
 
 ### 推導過程
 ${result.fireCalculationSteps}
@@ -431,6 +519,26 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
         {loading && <LoadingOverlay />}
       </AnimatePresence>
  
+      {/* Floating Chat Trigger */}
+      {result && (
+        <button 
+          onClick={() => setIsChatVisible(true)}
+          className="fixed bottom-6 right-6 z-[60] w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all group"
+        >
+          <MessageSquare className="group-hover:rotate-12 transition-transform" />
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 rounded-full border-2 border-white animate-pulse" />
+        </button>
+      )}
+
+      <WealthChat 
+        isOpen={isChatVisible}
+        onClose={() => setIsChatVisible(false)}
+        assets={assets}
+        liabilities={liabilities}
+        retirement={retirement}
+        aiConfig={aiConfig}
+      />
+
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 mb-6 sticky top-0 z-[60] shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
@@ -822,6 +930,69 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                </CardContent>
              </Card>
 
+              {/* Monte Carlo Simulation */}
+              <Card className="bg-white border-indigo-100 shadow-sm border-2 overflow-hidden mb-8">
+                <CardHeader className="bg-indigo-50/50 border-b border-indigo-100">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-black text-indigo-700 flex items-center gap-2 uppercase tracking-widest">
+                      <BrainCircuit size={18} /> 蒙地卡羅隨機模擬 (Monte Carlo Simulation)
+                    </CardTitle>
+                    <div className={`px-3 py-1 rounded-full text-[10px] font-bold ${Number(successProbability) > 80 ? 'bg-emerald-100 text-emerald-700' : Number(successProbability) > 50 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                      退休成功率: {Number(successProbability).toFixed(1)}%
+                    </div>
+                  </div>
+                  <CardDescription className="text-xs mt-1">
+                    進行 500 次市場波動隨機模擬，評估在不同市場極端情況下的資產安全性。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                    <div className="lg:col-span-3 h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={monteCarloData}>
+                          <defs>
+                            <linearGradient id="colorP90" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                            </linearGradient>
+                            <linearGradient id="colorP50" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
+                              <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="age" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
+                          <YAxis tickFormatter={(v) => `${(v/10000).toFixed(0)}W`} stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
+                          <RechartsTooltip formatter={(v: any) => formatCurrency(Number(v))} labelFormatter={(l) => `年齡: ${l}歲`} />
+                          <Area type="monotone" dataKey="p90" stroke="#10b981" fillOpacity={1} fill="url(#colorP90)" name="楽觀展望 (前10%)" />
+                          <Area type="monotone" dataKey="p50" stroke="#6366f1" fillOpacity={1} fill="url(#colorP50)" name="平均預期 (中位數)" />
+                          <Area type="monotone" dataKey="p10" stroke="#f43f5e" fillOpacity={0} name="最差情況 (後10%)" strokeDasharray="5 5" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl space-y-4">
+                      <h4 className="text-xs font-black text-slate-700 uppercase tracking-widest border-b pb-2">模擬診斷</h4>
+                      <div className="space-y-3">
+                        <div>
+                          <p className="text-[10px] text-slate-500 font-bold">成功概率意義</p>
+                          <p className="text-xs text-slate-700 leading-normal mt-1">
+                            {successProbability > 90 ? '您的配置極其穩健，幾乎能應對所有歷史級別的市場崩盤。' : 
+                             successProbability > 70 ? '配置良好，但在持續通膨或長期熊市下仍有一定風險。' : 
+                             '目前的配置波動率較高或儲蓄率不足，建議增加防禦性資產。'}
+                          </p>
+                        </div>
+                        <div className="pt-2">
+                          <p className="text-[10px] text-slate-500 font-bold">計算方法</p>
+                          <p className="text-[10px] text-slate-400 leading-normal mt-1 italic">
+                            基於您資產構成的歷史波動率 (Volatility)，透過常態分佈隨機生成年度報酬，重複運算 500 次路徑得出百分位分佈。
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
              {result.tokenUsage && (
                  <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-orange-100 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between text-orange-900 shadow-[0_4px_20px_-4px_rgba(251,146,60,0.15)] relative overflow-hidden flex-1">
                   <div className="flex items-center gap-2 mb-3 md:mb-0 relative z-10 w-full md:w-auto justify-center md:justify-start">
@@ -858,7 +1029,7 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                     <div className="mt-4 flex flex-col md:flex-row md:items-end justify-between gap-4">
                       <div>
                         <div className="text-6xl font-black italic">{result.fireAge} 歲</div>
-                        <div className="text-xs text-white/90 mt-1 font-bold tracking-widest uppercase">FIRE 目標: {formatCurrency(result.fireTargetAmount || (retirement.annualExpense / 0.047))} TWD</div>
+                        <div className="text-xs text-white/90 mt-1 font-bold tracking-widest uppercase">FIRE 目標: {formatCurrency(result.fireTargetAmount || (Number(retirement.annualExpense) / 0.047))} TWD</div>
                       </div>
                       <div className="flex md:justify-end w-full md:w-auto">
                         <Button 
@@ -956,10 +1127,10 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[10px] text-slate-400 font-bold">PR{pr}</div>
                              {/* Bottom Value */}
                              <div className="absolute top-6 left-1/2 -translate-x-1/2 text-[10px] text-slate-600 whitespace-nowrap hidden md:block">
-                               {Math.round(result.taiwanDeciles[i] / 10000)}W
+                               {Math.round((result.taiwanDeciles[i] || 0) / 10000)}W
                              </div>
                              <div className="absolute top-6 left-1/2 -translate-x-1/2 text-[9px] text-slate-500 whitespace-nowrap md:hidden">
-                               {Math.round(result.taiwanDeciles[i] / 10000)}
+                               {Math.round((result.taiwanDeciles[i] || 0) / 10000)}
                              </div>
                           </div>
                        ))}
@@ -978,6 +1149,59 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
              )}
 
              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                 {/* Asset Heatmap Section */}
+                 <Card className="lg:col-span-3 bg-white border-slate-200 shadow-sm overflow-hidden mb-8">
+                    <CardHeader className="border-b border-slate-100 bg-slate-50/50">
+                       <CardTitle className="text-sm font-bold flex items-center gap-2">
+                          <Layers size={18} className="text-indigo-500" /> 資產類別熱圖：風險與流動性分析
+                       </CardTitle>
+                       <CardDescription className="text-xs">
+                          分析資產轉現速度 (Liquidity) 與價值波動度 (Volatility) 的二維分布。
+                       </CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-6">
+                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                          {[
+                             { name: '股票/基金', val: Number(assets.stocks), vol: '高', liq: '中', color: 'bg-orange-500' },
+                             { name: '現金/存款', val: Number(assets.cash), vol: '低', liq: '極高', color: 'bg-emerald-500' },
+                             { name: '債券/定存', val: Number(assets.bonds), vol: '低', liq: '高', color: 'bg-blue-500' },
+                             { name: '貴金屬', val: Number(assets.metals), vol: '中', liq: '中', color: 'bg-yellow-500' },
+                             { name: '加密貨幣', val: Number(assets.crypto), vol: '極高', liq: '極高', color: 'bg-purple-500' },
+                             { name: '不動產', val: Number(assets.realEstate), vol: '低', liq: '低', color: 'bg-slate-500' },
+                          ].filter(a => a.val > 0).map(asset => (
+                             <div key={asset.name} className="flex flex-col border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                                <div className={`h-1 ${asset.color}`} />
+                                <div className="p-3 space-y-2">
+                                   <div className="flex justify-between items-start">
+                                      <span className="text-[10px] font-black text-slate-800">{asset.name}</span>
+                                      <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded italic">{Math.round((Number(asset.val) / Number(totalAssets)) * 100)}%</span>
+                                   </div>
+                                   <div className="grid grid-cols-2 gap-2 mt-2">
+                                      <div className="bg-slate-50 p-2 rounded-lg text-center">
+                                         <p className="text-[8px] text-slate-400 font-bold uppercase mb-0.5">波動性</p>
+                                         <p className={`text-[10px] font-black ${asset.vol.includes('高') ? 'text-rose-500' : 'text-emerald-500'}`}>{asset.vol}</p>
+                                      </div>
+                                      <div className="bg-slate-50 p-2 rounded-lg text-center">
+                                         <p className="text-[8px] text-slate-400 font-bold uppercase mb-0.5">流動性</p>
+                                         <p className={`text-[10px] font-black ${asset.liq.includes('高') ? 'text-emerald-500' : 'text-slate-500'}`}>{asset.liq}</p>
+                                      </div>
+                                   </div>
+                                </div>
+                             </div>
+                          ))}
+                       </div>
+                       <div className="mt-6 p-4 bg-indigo-50 rounded-2xl flex items-start gap-3">
+                          <Info size={16} className="text-indigo-400 mt-1" />
+                          <p className="text-[11px] text-indigo-700 leading-relaxed font-medium">
+                             <span className="font-bold">策略提示：</span>
+                             雖然「不動產」波動低，但其代價是低流動性。若市場轉差，您無法立即變現以應對生活開支。
+                             目前的「現金+債券」高流動性資產佔比為 <span className="font-black italic">{Math.round(((Number(assets.cash) + Number(assets.bonds)) / Number(totalAssets)) * 100)}%</span>，
+                             {((Number(assets.cash) + Number(assets.bonds)) / Number(totalAssets)) < 0.2 ? '略顯不足，建議提升流動緩衝。' : '覆蓋良好，足以應對突發狀況。'}
+                          </p>
+                       </div>
+                    </CardContent>
+                 </Card>
+
                <Card className="lg:col-span-1 border-slate-200 shadow-sm bg-white">
                  <CardHeader className="border-b border-slate-100 mb-4 bg-slate-50/50 rounded-t-3xl">
                    <CardTitle className="flex items-center gap-2 text-slate-800"><PieChartIcon size={18} className="text-indigo-500" /> 現有資產配置</CardTitle>
@@ -1001,7 +1225,7 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                           ))}
                         </Pie>
-                        <RechartsTooltip formatter={(value: number, name: string) => [`${formatCurrency(value)} (${((value / totalAssets) * 100).toFixed(1)}%)`, name]} contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                        <RechartsTooltip formatter={(value: number, name: string) => [`${formatCurrency(value)} (${((Number(value) / Number(totalAssets)) * 100).toFixed(1)}%)`, name]} contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                       </PieChart>
                     </ResponsiveContainer>
                  </CardContent>
@@ -1017,8 +1241,8 @@ ${result.recommendations.map(r => `* ${r}`).join('\\n')}
                    </div>
                    <div className="space-y-3">
                       {Object.entries(benchmarks).map(([name, data]) => {
-                        const totalVal = Object.values(assets).reduce((a: number, b: any) => a + (Number(b)||0), 0);
-                        const stocksP = (Number(assets.stocks) / totalVal) * 100 || 0;
+                        const totalVal = Object.values(assets).reduce((acc: number, b: any) => acc + (Number(b)||0), 0);
+                        const stocksP = (Number(assets.stocks) / Number(totalVal)) * 100 || 0;
                         const diff = Math.abs(stocksP - data.stocks);
                         const isSimilar = diff < 10;
                         
